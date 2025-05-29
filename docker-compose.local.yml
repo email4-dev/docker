@@ -1,0 +1,102 @@
+x-common-variables: &common-variables
+  NATS_HOST: nats:4222
+  POCKETBASE_URL: http://pocketbase:8090
+  POCKETBASE_EMAIL: admin@mydomain.com
+  POCKETBASE_PASS: MY_STRONG_PA$$W0rd
+  API_URL: http://api:3000
+  DEBUG: true
+
+services:
+  # NATS messaging system
+  nats:
+    image: nats:latest
+    command: -js -sd /data
+    # command: -js -sd /data -DV # use this command for NATS debugging
+    ports:
+      - "4222:4222"
+    #  - "8222:8222"  # NATS monitoring port
+    volumes:
+      - nats_data:/var/lib/nats
+      - nats_storage:/data
+    restart: unless-stopped
+    networks:
+      - email4dev_network
+
+  # PocketBase backend
+  pocketbase:
+    image: ghcr.io/muchobien/pocketbase:latest
+    ports:
+      - "8090:8090"
+    volumes:
+      - pocketbase_data:/pb_data
+      - pocketbase_migrations:/pb_migrations
+    environment:
+      - PB_BIND=0.0.0.0:8090
+    restart: unless-stopped
+    networks:
+      - email4dev_network
+
+  # API service
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile.local
+      additional_contexts:
+         source: ../api
+    ports:
+      - "3000:3000"
+    environment:
+      <<: *common-variables
+      ATTACHMENT_LIMIT: 20
+      CAPTCHA_EXPIRE: 60
+      CAPTCHA_COMPLEXITY: 100000
+      VERIFICATION_EXPIRE: 24
+    depends_on:
+      - nats
+      - pocketbase
+    restart: unless-stopped
+    networks:
+      - email4dev_network
+
+  # Dashboard service (WIP)
+  #dashboard:
+  #  build:
+  #    context: ./dashboard
+  #    dockerfile: Dockerfile
+  #    additional_contexts:
+  #       source: ../dashboard
+  #  environment: *common-variables
+  #  depends_on:
+  #    - api
+  #  restart: unless-stopped
+  #  networks:
+  #    - email4dev_network
+
+  # Mailer service
+  mailer:
+    build:
+      context: ./mailer
+      dockerfile: Dockerfile.local
+      additional_contexts:
+         source: ../mailer
+    environment:
+      <<: *common-variables
+      MAX_MESSAGES: 10
+      INTERVAL: 10 # seconds between message pulls
+    depends_on:
+      - api
+    restart: unless-stopped
+    networks:
+      - email4dev_network
+
+# Volumes for persistent data
+volumes:
+  nats_data:
+  nats_storage:
+  pocketbase_data:
+  pocketbase_migrations:
+
+# Network for all services
+networks:
+  email4dev_network:
+    driver: bridge

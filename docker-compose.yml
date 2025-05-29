@@ -1,0 +1,109 @@
+x-common-variables: &common-variables
+  NATS_HOST: nats:4222
+  POCKETBASE_URL: http://pocketbase:8090
+  POCKETBASE_EMAIL: admin@mydomain.com
+  POCKETBASE_PASS: MY_STRONG_PA$$W0rd
+  API_URL: http://api:3000
+  DEBUG: false
+
+services:
+  # NATS messaging system
+  nats:
+    image: nats:latest
+    command: -js -sd /data
+    #ports:
+    #  - "4222:4222"
+    #  - "8222:8222"  # NATS monitoring port
+    volumes:
+      - nats_data:/var/lib/nats
+      - nats_storage:/data
+    restart: unless-stopped
+    networks:
+      - email4dev_network
+
+  # PocketBase backend
+  pocketbase:
+    build:
+      context: ./pocketbase
+      dockerfile: Dockerfile
+    #ports:
+    #  - "8090:8090"
+    volumes:
+      - pocketbase_data:/pb_data
+    environment:
+      - PB_BIND=0.0.0.0:8090
+    restart: unless-stopped
+    networks:
+      - email4dev_network
+
+  # API service
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    environment:
+      <<: *common-variables
+      ATTACHMENT_LIMIT: 20
+      CAPTCHA_EXPIRE: 60
+      CAPTCHA_COMPLEXITY: 100000
+      VERIFICATION_EXPIRE: 24
+    depends_on:
+      - nats
+      - pocketbase
+    restart: unless-stopped
+    networks:
+      - email4dev_network
+
+  # Dashboard service
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    environment: *common-variables
+    depends_on:
+      - api
+    restart: unless-stopped
+    networks:
+      - email4dev_network
+
+  # Mailer service
+  mailer:
+    build:
+      context: ./mailer
+      dockerfile: Dockerfile
+    environment:
+      <<: *common-variables
+      MAX_MESSAGES: 10
+      INTERVAL: 10 # seconds between message pulls
+    depends_on:
+      - api
+    restart: unless-stopped
+    networks:
+      - email4dev_network
+
+  caddy:
+    image: caddy:latest
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+    networks:
+      - email4dev_network
+
+# Volumes for persistent data
+volumes:
+  nats_data:
+  nats_storage:
+  pocketbase_data:
+  caddy_data:
+  caddy_config:
+
+# Network for all services
+networks:
+  email4dev_network:
+    driver: bridge
