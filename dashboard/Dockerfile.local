@@ -1,0 +1,19 @@
+FROM oven/bun:latest AS builder
+
+WORKDIR /dashboard
+
+COPY --from=source . .
+
+RUN bun install && bun run build
+
+# production
+FROM oven/bun:latest
+
+COPY --from=builder /dashboard/package*.json ./
+COPY --from=builder /dashboard/build ./
+
+EXPOSE 3000
+
+ENV NODE_ENV=development
+
+ENTRYPOINT ["bun","/dashboard/index.js"]

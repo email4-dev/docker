@@ -1,0 +1,11 @@
+FROM oven/bun:latest
+
+WORKDIR /mailer
+
+COPY --from=source . .
+
+RUN bun install
+
+ENV NODE_ENV=development
+
+ENTRYPOINT ["bun","/mailer/index.ts"]

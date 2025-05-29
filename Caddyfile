@@ -1,0 +1,14 @@
+# Proxy to dashboard
+my.yourdomain.com {
+    reverse_proxy dashboard:3000
+}
+
+# Proxy to API
+api.yourdomain.com {
+    reverse_proxy api:3000
+}
+
+# Proxy to PocketBase
+pb.yourdomain.com {
+    reverse_proxy pocketbase:8090
+}
