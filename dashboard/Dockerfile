@@ -1,6 +1,8 @@
-FROM oven/bun:latest AS builder
+FROM oven/bun:alpine AS builder
 
 WORKDIR /dashboard
+
+RUN apk add --no-cache git
 
 RUN git clone https://github.com/email4-dev/dashboard.git .
 

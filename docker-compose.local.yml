@@ -31,7 +31,8 @@ services:
       - pocketbase_data:/pb_data
       - pocketbase_migrations:/pb_migrations
     environment:
-      - PB_BIND=0.0.0.0:8090
+      <<: *common-variables
+      PB_BIND: 0.0.0.0:8090
     restart: unless-stopped
     networks:
       - email4dev_network
