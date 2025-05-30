@@ -1,6 +1,8 @@
-FROM oven/bun:latest
+FROM oven/bun:alpine
 
 WORKDIR /api
+
+RUN apk add --no-cache git
 
 RUN git clone https://github.com/email4-dev/api.git .
 
