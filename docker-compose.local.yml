@@ -1,0 +1,177 @@
+x-common-variables: &common-variables
+  POCKETBASE_URL: http://pocketbase:8090
+  POCKETBASE_EMAIL: admin@mydomain.com
+  POCKETBASE_PASS: MY_STRONG_PA$$W0rd
+  MINIO_ROOT_USER: email4dev
+  MINIO_ROOT_PASSWORD: MY_STRONG_PA$$W0rd
+  API_URL: http://api:3000
+  DEBUG: false
+
+x-smtp-variables: &smtp-variables
+  SMTP_HOSTNAME: mail.mydomain.com
+  SMTP_PORT: 465 # 25 | 465 | 587
+  SMTP_SECURITY: ssl # none | ssl | starttls
+  SMTP_AUTH: plain # plain | gmail | oauth2
+  SMTP_USERNAME: noreply@mydomain.com
+  SMTP_PASSWORD: MY_STRONG_PA$$W0rd # serves as service client key for Gmail, or access token for oAuth2
+  #SMTP_PRIVATE_KEY: oAuth2PrivateKey # required for Gmail
+  #SMTP_ACCESS_URL: oAuth2AccessUrl # required for oAuth2
+  SMTP_POOL: false # enable for busy instances
+
+services:
+  valkey:
+    image: valkey/valkey:alpine
+    command: ["valkey-server", "/usr/local/etc/valkey/valkey.conf"]
+    #ports:
+    #  - "6379:6379"
+    volumes:
+      - valkey_data:/data
+      - ./valkey.conf:/usr/local/etc/valkey/valkey.conf:ro
+    restart: unless-stopped
+    labels:
+      ofelia.enabled: "true"
+      ofelia.job-exec.ltrim.schedule: "@every 24h" # configure this as necessary
+      ofelia.job-exec.ltrim.command: "valkey-cli LTRIM failed 0 99" # keep the last 100 entries
+    networks:
+      - email4dev_network
+
+  minio:
+    image: quay.io/minio/minio:latest
+    command:
+      - minio
+      - server
+      - /data
+      - --console-address
+      - ":9001"
+    #ports:
+    #  - 9000:9000
+    #  - 9001:9001
+    volumes:
+      - minio_data:/data
+    environment:
+      <<: *common-variables
+      MINIO_BROWSER: off # change to `on` to enable the dashboard
+      # MINIO_SERVER_URL: https://s3.mydomain.com
+      # MINIO_BROWSER_REDIRECT_URL: https://s3.mydomain.com
+    restart: unless-stopped
+    #healthcheck:
+    #  test: mc ready local || exit 1
+    #  interval: 2s
+    #  timeout: 10s
+    #  retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 1GB
+    networks:
+      - email4dev_network
+
+  pocketbase:
+    image: ghcr.io/muchobien/pocketbase:latest
+    ports:
+      - "8090:8090"
+    volumes:
+      - pocketbase_data:/pb_data
+      - pocketbase_migrations:/pb_migrations
+    environment:
+      <<: *common-variables
+      PB_BIND: 0.0.0.0:8090
+    restart: unless-stopped
+    networks:
+      - email4dev_network
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile.local
+      additional_contexts:
+         source: ../api
+    ports:
+      - "3000:3000"
+    environment:
+      <<: *common-variables
+      ATTACHMENT_LIMIT: 20
+      CAPTCHA_EXPIRE: 60
+      CAPTCHA_COMPLEXITY: 100000
+      VERIFICATION_EXPIRE: 24
+    depends_on:
+      - valkey
+      - minio
+      - pocketbase
+    restart: unless-stopped
+    labels:
+      ofelia.enabled: "true"
+      ofelia.job-exec.s3-cleanup.schedule: "@every 1h" # configure this as necessary
+      ofelia.job-exec.s3-cleanup.command: "bun /api/cleanup.ts" # delete expired attachments
+    networks:
+      - email4dev_network
+
+  #dashboard:
+  #  build:
+  #    context: ./dashboard
+  #    dockerfile: Dockerfile
+  #    additional_contexts:
+  #       source: ../dashboard
+  #  environment: *common-variables
+  #  depends_on:
+  #    - api
+  #  restart: unless-stopped
+  #  networks:
+  #    - email4dev_network
+
+  # Mailer service
+  mailer:
+    build:
+      context: ./mailer
+      dockerfile: Dockerfile.local
+      additional_contexts:
+         source: ../mailer
+    environment:
+      <<: [*common-variables, *smtp-variables]
+      CONSUMER_BLOCK: 10 # seconds
+      CONSUMER_BATCH_SIZE: 5
+    depends_on:
+      - api
+    restart: unless-stopped
+    networks:
+      - email4dev_network
+
+#  retrier:
+#    build:
+#      context: ./mailer
+#      dockerfile: Dockerfile.local
+#      additional_contexts:
+#         source: ../mailer
+#    command:
+#      - "--retrier"
+#    environment:
+#      <<: [*common-variables, *smtp-variables]
+#      CONSUMER_BLOCK: 10 # seconds
+#      CONSUMER_BATCH_SIZE: 5
+#      MAILER_RETRIES: 5
+#      RETRY_INTERVAL: 15 # minutes
+#    depends_on:
+#      - mailer
+#    restart: unless-stopped
+#    networks:
+#      - email4dev_network
+
+  ofelia:
+    image: mcuadros/ofelia:latest
+    depends_on:
+      - valkey
+    command: daemon --docker
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+volumes:
+  valkey_data:
+  minio_data:
+  pocketbase_data:
+  pocketbase_migrations:
+  caddy_data:
+  caddy_config:
+
+networks:
+  email4dev_network:
+    driver: bridge
