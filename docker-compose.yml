@@ -67,9 +67,7 @@ services:
       context: ./api
       dockerfile: Dockerfile
       additional_contexts:
-         source: ../api
-      ports:
-        - "3000:3000"
+         source: ./api
     environment:
       POCKETBASE_URL: ${POCKETBASE_URL}
       POCKETBASE_EMAIL: ${POCKETBASE_EMAIL}
@@ -108,7 +106,7 @@ services:
       context: ./mailer
       dockerfile: Dockerfile
       additional_contexts:
-          source: ../mailer
+          source: ./mailer
     environment:
       POCKETBASE_URL: ${POCKETBASE_URL}
       POCKETBASE_EMAIL: ${POCKETBASE_EMAIL}
@@ -137,6 +135,8 @@ services:
     build:
       context: ./mailer
       dockerfile: Dockerfile
+      additional_contexts:
+          source: ./mailer
     command:
       - "--retrier"
     environment:
