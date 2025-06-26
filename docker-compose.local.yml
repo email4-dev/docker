@@ -2,14 +2,30 @@ services:
   valkey:
     image: valkey/valkey:alpine
     command: ["valkey-server", "/usr/local/etc/valkey/valkey.conf"]
+    #ports:
+    #  - "6379:6379"
     volumes:
       - valkey_data:/data
       - ./valkey.conf:/usr/local/etc/valkey/valkey.conf:ro
     restart: unless-stopped
+    environment:
+      DEBUG: ${DEBUG}
     labels:
       ofelia.enabled: "true"
       ofelia.job-exec.ltrim.schedule: "@every 24h" # configure this as necessary
       ofelia.job-exec.ltrim.command: "valkey-cli LTRIM failed 0 99" # keep the last 100 entries
+    networks:
+      - email4dev_network
+
+  redisinsight:
+    image: redislabs/redisinsight:latest
+    ports:
+      - '5540:5540'
+    volumes:
+      - insight_data:/db
+    environment:
+      RI_REDIS_HOST: valkey
+      RI_DATABASE_MANAGEMENT: false
     networks:
       - email4dev_network
 
@@ -19,6 +35,11 @@ services:
       - minio
       - server
       - /data
+      - --console-address
+      - ":9001"
+    ports:
+    #  - 9000:9000
+      - 9001:9001
     volumes:
       - minio_data:/data
     environment:
@@ -27,11 +48,6 @@ services:
       MINIO_BROWSER: ${MINIO_BROWSER}
       DEBUG: ${DEBUG}
     restart: unless-stopped
-    healthcheck:
-      test: mc ready local || exit 1
-      interval: 2s
-      timeout: 10s
-      retries: 3
     deploy:
       resources:
         limits:
@@ -40,36 +56,24 @@ services:
       - email4dev_network
 
   pocketbase:
-    build:
-      context: ./pocketbase
-      dockerfile: Dockerfile
-      args:
-        PB_VERSION: 0.28.4
-        PB_OS: linux # darwin for Mac | linux | windows
-        PB_ARCH: arm64 # amd64 | arm64
+    image: ghcr.io/muchobien/pocketbase:latest
+    ports:
+      - "8090:8090"
     volumes:
       - pocketbase_data:/pb_data
-    environment:
-      POCKETBASE_EMAIL: ${POCKETBASE_EMAIL}
-      POCKETBASE_PASS: ${POCKETBASE_PASS}
-      PB_BIND: 0.0.0.0:8090
+      - pocketbase_migrations:/pb_migrations
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8090/api/health"]
-      interval: 2s
-      timeout: 10s
-      retries: 3
     networks:
       - email4dev_network
 
   api:
     build:
       context: ./api
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.local
       additional_contexts:
          source: ../api
-      ports:
-        - "3000:3000"
+    ports:
+      - "3000:3000"
     environment:
       POCKETBASE_URL: ${POCKETBASE_URL}
       POCKETBASE_EMAIL: ${POCKETBASE_EMAIL}
@@ -94,21 +98,24 @@ services:
       - email4dev_network
 
   # dashboard:
-  #   build:
-  #     context: ./dashboard
-  #     dockerfile: Dockerfile
-  #   depends_on:
-  #     - api
-  #   restart: unless-stopped
-  #   networks:
-  #     - email4dev_network
+  #  build:
+  #    context: ./dashboard
+  #    dockerfile: Dockerfile
+  #    additional_contexts:
+  #       source: ../dashboard
+  #  depends_on:
+  #    - api
+  #  restart: unless-stopped
+  #  networks:
+  #    - email4dev_network
 
+  # Mailer service
   mailer:
     build:
       context: ./mailer
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.local
       additional_contexts:
-          source: ../mailer
+         source: ../mailer
     environment:
       POCKETBASE_URL: ${POCKETBASE_URL}
       POCKETBASE_EMAIL: ${POCKETBASE_EMAIL}
@@ -133,51 +140,39 @@ services:
     networks:
       - email4dev_network
 
-  retrier:
-    build:
-      context: ./mailer
-      dockerfile: Dockerfile
-    command:
-      - "--retrier"
-    environment:
-      POCKETBASE_URL: ${POCKETBASE_URL}
-      POCKETBASE_EMAIL: ${POCKETBASE_EMAIL}
-      POCKETBASE_PASS: ${POCKETBASE_PASS}
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-      CONSUMER_BLOCK: ${CONSUMER_BLOCK}
-      CONSUMER_BATCH_SIZE: ${CONSUMER_BATCH_SIZE}
-      MAILER_RETRIES: ${MAILER_RETRIES}
-      RETRY_INTERVAL: ${RETRY_INTERVAL}
-      SMTP_HOSTNAME: ${SMTP_HOSTNAME}
-      SMTP_PORT: ${SMTP_PORT}
-      SMTP_SECURITY: ${SMTP_SECURITY}
-      SMTP_AUTH: ${SMTP_AUTH}
-      SMTP_USERNAME: ${SMTP_USERNAME}
-      SMTP_PASSWORD: ${SMTP_PASSWORD}
-      SMTP_PRIVATE_KEY: ${SMTP_PRIVATE_KEY}
-      SMTP_ACCESS_URL: ${SMTP_ACCESS_URL}
-      SMTP_POOL: ${SMTP_POOL}
-      DEBUG: ${DEBUG}
-    depends_on:
-      - mailer
-    restart: unless-stopped
-    networks:
-      - email4dev_network
-
-  caddy:
-    image: caddy:latest
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile
-      - caddy_data:/data
-      - caddy_config:/config
-    restart: unless-stopped
-    networks:
-      - email4dev_network
+  # retrier:
+  #   build:
+  #     context: ./mailer
+  #     dockerfile: Dockerfile.local
+  #     additional_contexts:
+  #       source: ../mailer
+  #   command:
+  #    - "--retrier"
+  #   environment:
+  #     POCKETBASE_URL: ${POCKETBASE_URL}
+  #     POCKETBASE_EMAIL: ${POCKETBASE_EMAIL}
+  #     POCKETBASE_PASS: ${POCKETBASE_PASS}
+  #     MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+  #     MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+  #     CONSUMER_BLOCK: ${CONSUMER_BLOCK}
+  #     CONSUMER_BATCH_SIZE: ${CONSUMER_BATCH_SIZE}
+  #     MAILER_RETRIES: ${MAILER_RETRIES}
+  #     RETRY_INTERVAL: ${RETRY_INTERVAL}
+  #     SMTP_HOSTNAME: ${SMTP_HOSTNAME}
+  #     SMTP_PORT: ${SMTP_PORT}
+  #     SMTP_SECURITY: ${SMTP_SECURITY}
+  #     SMTP_AUTH: ${SMTP_AUTH}
+  #     SMTP_USERNAME: ${SMTP_USERNAME}
+  #     SMTP_PASSWORD: ${SMTP_PASSWORD}
+  #     SMTP_PRIVATE_KEY: ${SMTP_PRIVATE_KEY}
+  #     SMTP_ACCESS_URL: ${SMTP_ACCESS_URL}
+  #     SMTP_POOL: ${SMTP_POOL}
+  #     DEBUG: ${DEBUG}
+  #   depends_on:
+  #    - mailer
+  #   restart: unless-stopped
+  #   networks:
+  #    - email4dev_network
 
   ofelia:
     image: mcuadros/ofelia:latest
@@ -189,8 +184,10 @@ services:
 
 volumes:
   valkey_data:
+  insight_data:
   minio_data:
   pocketbase_data:
+  pocketbase_migrations:
   caddy_data:
   caddy_config:
 

@@ -18,6 +18,7 @@ WORKDIR /app
 COPY --from=setup /setup/pocketbase ./pocketbase
 COPY --from=setup /tmp/schema-main/pb_migrations /pb_migrations
 
+RUN apk add curl
 RUN addgroup -S pocketbase && adduser -SG pocketbase pocketbase
 RUN chmod +x ./pocketbase
 RUN chown -R pocketbase:pocketbase ./
