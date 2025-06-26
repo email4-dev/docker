@@ -1,29 +1,7 @@
-x-common-variables: &common-variables
-  POCKETBASE_URL: http://pocketbase:8090
-  POCKETBASE_EMAIL: admin@mydomain.com
-  POCKETBASE_PASS: MY_STRONG_PA$$W0rd
-  MINIO_ROOT_USER: email4dev
-  MINIO_ROOT_PASSWORD: MY_STRONG_PA$$W0rd
-  API_URL: http://api:3000
-  DEBUG: false
-
-x-smtp-variables: &smtp-variables
-  SMTP_HOSTNAME: mail.mydomain.com
-  SMTP_PORT: 465 # 25 | 465 | 587
-  SMTP_SECURITY: ssl # none | ssl | starttls
-  SMTP_AUTH: plain # plain | gmail | oauth2
-  SMTP_USERNAME: noreply@mydomain.com
-  SMTP_PASSWORD: MY_STRONG_PA$$W0rd # serves as service client key for Gmail, or access token for oAuth2
-  #SMTP_PRIVATE_KEY: oAuth2PrivateKey # required for Gmail
-  #SMTP_ACCESS_URL: oAuth2AccessUrl # required for oAuth2
-  SMTP_POOL: false # enable for busy instances
-
 services:
   valkey:
     image: valkey/valkey:alpine
     command: ["valkey-server", "/usr/local/etc/valkey/valkey.conf"]
-    #ports:
-    #  - "6379:6379"
     volumes:
       - valkey_data:/data
       - ./valkey.conf:/usr/local/etc/valkey/valkey.conf:ro
@@ -41,24 +19,19 @@ services:
       - minio
       - server
       - /data
-      - --console-address
-      - ":9001"
-    #ports:
-    #  - 9000:9000
-    #  - 9001:9001
     volumes:
       - minio_data:/data
     environment:
-      <<: *common-variables
-      MINIO_BROWSER: off # change to `on` to enable the dashboard
-      # MINIO_SERVER_URL: https://s3.mydomain.com
-      # MINIO_BROWSER_REDIRECT_URL: https://s3.mydomain.com
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_BROWSER: ${MINIO_BROWSER}
+      DEBUG: ${DEBUG}
     restart: unless-stopped
-    #healthcheck:
-    #  test: mc ready local || exit 1
-    #  interval: 2s
-    #  timeout: 10s
-    #  retries: 3
+    healthcheck:
+      test: mc ready local || exit 1
+      interval: 2s
+      timeout: 10s
+      retries: 3
     deploy:
       resources:
         limits:
@@ -71,22 +44,21 @@ services:
       context: ./pocketbase
       dockerfile: Dockerfile
       args:
-        PB_VERSION: 0.28.2
+        PB_VERSION: 0.28.4
         PB_OS: linux # darwin for Mac | linux | windows
         PB_ARCH: arm64 # amd64 | arm64
-    #ports:
-    #  - "8090:8090"
     volumes:
       - pocketbase_data:/pb_data
     environment:
-      <<: *common-variables
+      POCKETBASE_EMAIL: ${POCKETBASE_EMAIL}
+      POCKETBASE_PASS: ${POCKETBASE_PASS}
       PB_BIND: 0.0.0.0:8090
     restart: unless-stopped
-    #healthcheck:
-    #  test: ["CMD", "curl", "-f", "http://localhost:8090/api/health"]
-    #  interval: 2s
-    #  timeout: 10s
-    #  retries: 3
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8090/api/health"]
+      interval: 2s
+      timeout: 10s
+      retries: 3
     networks:
       - email4dev_network
 
@@ -99,11 +71,16 @@ services:
       ports:
         - "3000:3000"
     environment:
-      <<: *common-variables
-      ATTACHMENT_LIMIT: 20
-      CAPTCHA_EXPIRE: 60
-      CAPTCHA_COMPLEXITY: 100000
-      VERIFICATION_EXPIRE: 24
+      POCKETBASE_URL: ${POCKETBASE_URL}
+      POCKETBASE_EMAIL: ${POCKETBASE_EMAIL}
+      POCKETBASE_PASS: ${POCKETBASE_PASS}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      ATTACHMENT_LIMIT: ${ATTACHMENT_LIMIT}
+      CAPTCHA_EXPIRE: ${CAPTCHA_EXPIRE}
+      CAPTCHA_COMPLEXITY: ${CAPTCHA_COMPLEXITY}
+      VERIFICATION_EXPIRE: ${VERIFICATION_EXPIRE}
+      DEBUG: ${DEBUG}
     depends_on:
       - valkey
       - minio
@@ -111,21 +88,20 @@ services:
     restart: unless-stopped
     labels:
       ofelia.enabled: "true"
-      ofelia.job-exec.s3-cleanup.schedule: "@every 1h" # configure this as necessary
-      ofelia.job-exec.s3-cleanup.command: "bun /api/cleanup.ts" # delete expired attachments
+      ofelia.job-exec.s3-cleanup.schedule: "@every ${CLEANUP_INTERVAL}"
+      ofelia.job-exec.s3-cleanup.command: "bun /api/cleanup.ts"
     networks:
       - email4dev_network
 
-  dashboard:
-    build:
-      context: ./dashboard
-      dockerfile: Dockerfile
-    environment: *common-variables
-    depends_on:
-      - api
-    restart: unless-stopped
-    networks:
-      - email4dev_network
+  # dashboard:
+  #   build:
+  #     context: ./dashboard
+  #     dockerfile: Dockerfile
+  #   depends_on:
+  #     - api
+  #   restart: unless-stopped
+  #   networks:
+  #     - email4dev_network
 
   mailer:
     build:
@@ -134,9 +110,23 @@ services:
       additional_contexts:
           source: ../mailer
     environment:
-      <<: [*common-variables, *smtp-variables]
-      CONSUMER_BLOCK: 10 # seconds
-      CONSUMER_BATCH_SIZE: 5
+      POCKETBASE_URL: ${POCKETBASE_URL}
+      POCKETBASE_EMAIL: ${POCKETBASE_EMAIL}
+      POCKETBASE_PASS: ${POCKETBASE_PASS}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      CONSUMER_BLOCK: ${CONSUMER_BLOCK}
+      CONSUMER_BATCH_SIZE: ${CONSUMER_BATCH_SIZE}
+      SMTP_HOSTNAME: ${SMTP_HOSTNAME}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_SECURITY: ${SMTP_SECURITY}
+      SMTP_AUTH: ${SMTP_AUTH}
+      SMTP_USERNAME: ${SMTP_USERNAME}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_PRIVATE_KEY: ${SMTP_PRIVATE_KEY}
+      SMTP_ACCESS_URL: ${SMTP_ACCESS_URL}
+      SMTP_POOL: ${SMTP_POOL}
+      DEBUG: ${DEBUG}
     depends_on:
       - api
     restart: unless-stopped
@@ -150,11 +140,25 @@ services:
     command:
       - "--retrier"
     environment:
-      <<: [*common-variables, *smtp-variables]
-      CONSUMER_BLOCK: 10 # seconds
-      CONSUMER_BATCH_SIZE: 5
-      MAILER_RETRIES: 5
-      RETRY_INTERVAL: 15 # minutes
+      POCKETBASE_URL: ${POCKETBASE_URL}
+      POCKETBASE_EMAIL: ${POCKETBASE_EMAIL}
+      POCKETBASE_PASS: ${POCKETBASE_PASS}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      CONSUMER_BLOCK: ${CONSUMER_BLOCK}
+      CONSUMER_BATCH_SIZE: ${CONSUMER_BATCH_SIZE}
+      MAILER_RETRIES: ${MAILER_RETRIES}
+      RETRY_INTERVAL: ${RETRY_INTERVAL}
+      SMTP_HOSTNAME: ${SMTP_HOSTNAME}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_SECURITY: ${SMTP_SECURITY}
+      SMTP_AUTH: ${SMTP_AUTH}
+      SMTP_USERNAME: ${SMTP_USERNAME}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_PRIVATE_KEY: ${SMTP_PRIVATE_KEY}
+      SMTP_ACCESS_URL: ${SMTP_ACCESS_URL}
+      SMTP_POOL: ${SMTP_POOL}
+      DEBUG: ${DEBUG}
     depends_on:
       - mailer
     restart: unless-stopped
