@@ -69,6 +69,7 @@ services:
       additional_contexts:
          source: ./api
     environment:
+      API_URL: ${API_URL}
       POCKETBASE_URL: ${POCKETBASE_URL}
       POCKETBASE_EMAIL: ${POCKETBASE_EMAIL}
       POCKETBASE_PASS: ${POCKETBASE_PASS}
