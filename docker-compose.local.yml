@@ -117,6 +117,7 @@ services:
       additional_contexts:
          source: ../mailer
     environment:
+      API_URL: ${API_URL}
       POCKETBASE_URL: ${POCKETBASE_URL}
       POCKETBASE_EMAIL: ${POCKETBASE_EMAIL}
       POCKETBASE_PASS: ${POCKETBASE_PASS}
@@ -149,6 +150,7 @@ services:
   #   command:
   #    - "--retrier"
   #   environment:
+  #     API_URL: ${API_URL}
   #     POCKETBASE_URL: ${POCKETBASE_URL}
   #     POCKETBASE_EMAIL: ${POCKETBASE_EMAIL}
   #     POCKETBASE_PASS: ${POCKETBASE_PASS}
